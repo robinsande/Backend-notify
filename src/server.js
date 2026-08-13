@@ -395,18 +395,22 @@ app.post('/api/events/:id/reminders', async (req, res) => {
   res.json({ eventId: req.params.id, reminders, recipient });
 });
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/';
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/notify';
+const PORT = Number(process.env.PORT) || 3001;
 
 // Start server with or without MongoDB
 const startServer = () => {
-  app.listen(3001, () => {
-    console.log('NOTIFY backend running on http://localhost:3001');
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`NOTIFY backend running on http://0.0.0.0:${PORT}`);
     console.log(`MongoDB target configured as ${MONGO_URI}`);
   });
 };
 
 // Try to connect to MongoDB, but allow server to run without it
-mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
+mongoose.connect(MONGO_URI, {
+  serverSelectionTimeoutMS: 5000,
+  family: 4
+})
   .then(() => {
     console.log('MongoDB connected successfully');
     startServer();
