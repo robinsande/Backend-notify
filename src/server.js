@@ -4,7 +4,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const { calculateReminderSchedule, getUpcomingItemsForReminders } = require('./reminderEngine');
 const { sendMail } = require('./emailService');
-const { registerUser, authenticateUser, createViewerUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, getRegisteredUserEmails, recordAdminLoginEmail, getAdminReminderRecipientEmails, completeFirstLogin, getAllUsers } = require('./authStore');
+const { registerUser, authenticateUser, createViewerUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, getRegisteredUserEmails, recordAdminLoginEmail, getAdminReminderRecipientEmails, completeFirstLogin, getAllUsers, deleteUserById } = require('./authStore');
 const { initialEvents, initialTasks, initialNotifications, initialAttendees, initialDocuments, initialAuditLogs, buildDashboardSummary, syncEventAttendees } = require('./inMemoryStore');
 
 const REMINDER_INTERVAL_MINUTES = Number(process.env.NOTIFY_REMINDER_INTERVAL_MINUTES || 5);
@@ -316,33 +316,54 @@ app.post('/api/auth/password-reset', async (req, res) => {
 
 // User management endpoints (admin only)
 app.post('/api/admin/users', async (req, res) => {
-  // Check if current user is admin
   if (currentUserRole !== 'admin') {
     return res.status(403).json({ error: 'Only admins can create users' });
   }
 
   try {
     const { email, fullName, tempPassword } = req.body || {};
-    if (!email || !tempPassword) {
-      return res.status(400).json({ error: 'Email and temporary password are required' });
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
     }
 
     const user = await createViewerUser({ email, fullName, tempPassword });
     console.log(`[ADMIN] New viewer user created: ${user.email}`);
-    res.status(201).json({ ok: true, user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role } });
+    res.status(201).json({
+      ok: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        password: user.password,
+        isFirstLogin: user.isFirstLogin
+      }
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
 app.get('/api/admin/users', async (req, res) => {
-  // Check if current user is admin
   if (currentUserRole !== 'admin') {
     return res.status(403).json({ error: 'Only admins can view users' });
   }
 
   const users = await getAllUsers();
   res.json(users);
+});
+
+app.delete('/api/admin/users/:id', async (req, res) => {
+  if (currentUserRole !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can delete users' });
+  }
+
+  try {
+    const deleted = await deleteUserById(req.params.id);
+    res.json({ ok: true, deleted });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.post('/api/auth/complete-first-login', async (req, res) => {

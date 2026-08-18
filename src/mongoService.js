@@ -7,7 +7,7 @@ let connected = false;
 
 async function connectToMongo() {
   if (connected) return;
-  const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/notify';
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/notify';
   await mongoose.connect(uri, {
     serverSelectionTimeoutMS: 5000,
     family: 4

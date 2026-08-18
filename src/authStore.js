@@ -31,6 +31,34 @@ function generateOtpCode() {
   return `${Math.floor(100000 + Math.random() * 900000)}`;
 }
 
+function generateTemporaryPassword() {
+  const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lowercase = 'abcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%';
+  const allChars = uppercase + lowercase + digits + symbols;
+
+  const pick = (characters) => characters[Math.floor(Math.random() * characters.length)];
+  const passwordChars = [
+    pick(uppercase),
+    pick(lowercase),
+    pick(digits),
+    pick(symbols),
+    ...Array.from({ length: 8 }, () => pick(allChars))
+  ];
+
+  for (let index = passwordChars.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [passwordChars[index], passwordChars[swapIndex]] = [passwordChars[swapIndex], passwordChars[index]];
+  }
+
+  return passwordChars.join('');
+}
+
+function generateUserId() {
+  return `user-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
@@ -65,7 +93,7 @@ async function registerUser({ email, password, fullName }) {
   }
 
   const user = {
-    id: `user-${Date.now()}`,
+    id: generateUserId(),
     email: normalizedEmail,
     password: String(password || '').trim(),
     fullName: String(fullName || '').trim() || normalizedEmail,
@@ -80,8 +108,10 @@ async function registerUser({ email, password, fullName }) {
 
 async function createViewerUser({ email, fullName, tempPassword }) {
   const normalizedEmail = normalizeEmail(email);
-  if (!normalizedEmail || !String(tempPassword || '').trim()) {
-    throw new Error('Email and temporary password are required');
+  const generatedPassword = String(tempPassword || '').trim() || generateTemporaryPassword();
+
+  if (!normalizedEmail) {
+    throw new Error('Email is required');
   }
 
   if (useMongo()) {
@@ -92,7 +122,7 @@ async function createViewerUser({ email, fullName, tempPassword }) {
 
     const user = await User.create({
       email: normalizedEmail,
-      password: String(tempPassword || '').trim(),
+      password: generatedPassword,
       fullName: String(fullName || '').trim() || normalizedEmail,
       role: 'viewer',
       isFirstLogin: true,
@@ -108,9 +138,9 @@ async function createViewerUser({ email, fullName, tempPassword }) {
   }
 
   const user = {
-    id: `user-${Date.now()}`,
+    id: generateUserId(),
     email: normalizedEmail,
-    password: String(tempPassword || '').trim(),
+    password: generatedPassword,
     fullName: String(fullName || '').trim() || normalizedEmail,
     role: 'viewer',
     isFirstLogin: true,
@@ -156,7 +186,7 @@ async function grantAdminAccess(email) {
   }
 
   user = {
-    id: `user-${Date.now()}`,
+    id: generateUserId(),
     email: normalizedEmail,
     password: 'Admin@2026',
     fullName: normalizedEmail,
@@ -349,6 +379,31 @@ async function getAllUsers() {
   }));
 }
 
+async function deleteUserById(userId) {
+  const normalizedId = String(userId || '').trim();
+  if (!normalizedId) {
+    throw new Error('User ID is required');
+  }
+
+  if (useMongo()) {
+    const user = await User.findById(normalizedId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    await User.findByIdAndDelete(normalizedId);
+    return mapUser(user);
+  }
+
+  const index = users.findIndex(user => String(user.id) === normalizedId);
+  if (index === -1) {
+    throw new Error('User not found');
+  }
+
+  const [deleted] = users.splice(index, 1);
+  return mapUser(deleted);
+}
+
 module.exports = {
   registerUser,
   authenticateUser,
@@ -361,5 +416,6 @@ module.exports = {
   recordAdminLoginEmail,
   getAdminReminderRecipientEmails,
   completeFirstLogin,
-  getAllUsers
+  getAllUsers,
+  deleteUserById
 };

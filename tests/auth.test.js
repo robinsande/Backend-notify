@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { registerUser, authenticateUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, recordAdminLoginEmail, getAdminReminderRecipientEmails, grantAdminAccess } = require('../src/authStore');
+const { registerUser, authenticateUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, recordAdminLoginEmail, getAdminReminderRecipientEmails, grantAdminAccess, createViewerUser, getAllUsers, deleteUserById } = require('../src/authStore');
 const { initialAttendees, syncEventAttendees } = require('../src/inMemoryStore');
 
 test('registerUser creates an account that can be used to sign in', async () => {
@@ -70,6 +70,29 @@ test('requestPasswordResetOtp creates a code that can be verified for an existin
   assert.equal(verified.email, 'otp.user@example.com');
   const authenticated = await authenticateUser({ email: 'otp.user@example.com', password: 'Reset123!' });
   assert.equal(authenticated?.email, 'otp.user@example.com');
+});
+
+test('viewer users can be created with an auto-generated temporary password that works for first login', async () => {
+  const user = await createViewerUser({ email: 'auto.viewer@example.com', fullName: 'Auto Viewer' });
+
+  assert.equal(user.email, 'auto.viewer@example.com');
+  assert.equal(user.role, 'viewer');
+  assert.equal(user.isFirstLogin, true);
+  assert.match(user.password, /[A-Za-z]/);
+  assert.match(user.password, /\d/);
+
+  const authenticated = await authenticateUser({ email: 'auto.viewer@example.com', password: user.password });
+  assert.ok(authenticated);
+  assert.equal(authenticated.email, 'auto.viewer@example.com');
+});
+
+test('admin can delete another user from the system', async () => {
+  const created = await createViewerUser({ email: 'delete.viewer@example.com', fullName: 'Delete Viewer' });
+  const deleted = await deleteUserById(created.id);
+
+  assert.equal(deleted.email, 'delete.viewer@example.com');
+  const remaining = await getAllUsers();
+  assert.equal(remaining.some(user => user.id === created.id), false);
 });
 
 test('reminder recipients prioritize admin login emails used for access', () => {
