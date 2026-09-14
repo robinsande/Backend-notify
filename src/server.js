@@ -339,15 +339,22 @@ app.post('/api/admin/users', async (req, res) => {
   }
 
   try {
-    const { email, fullName, tempPassword } = req.body || {};
+    const { email, fullName } = req.body || {};
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    const user = await createViewerUser({ email, fullName, tempPassword });
+    const user = await createViewerUser({ email, fullName });
+    const emailResult = await sendMail({
+      to: user.email,
+      subject: 'Your NOTIFY account is ready',
+      text: `Your NOTIFY viewer account has been created. Email: ${user.email}\nTemporary password: ${user.password}\nPlease change this password after your first login.`,
+      html: `<p>Your NOTIFY viewer account has been created.</p><p><strong>Email:</strong> ${user.email}<br><strong>Temporary password:</strong> ${user.password}</p><p>Please change this password after your first login.</p>`
+    });
     console.log(`[ADMIN] New viewer user created: ${user.email}`);
     res.status(201).json({
       ok: true,
+      emailSent: emailResult.fallback !== 'local-only',
       user: {
         id: user.id,
         email: user.email,
@@ -387,6 +394,9 @@ app.delete('/api/admin/users/:id', async (req, res) => {
 app.put('/api/admin/users/:id/role', async (req, res) => {
   if (currentUserRole !== 'admin') {
     return res.status(403).json({ error: 'Only admins can change user roles' });
+  }
+  if (!requirePersistentAuth(res)) {
+    return;
   }
   if (String(req.params.id) === String(currentUserId) && req.body?.role !== 'admin') {
     return res.status(400).json({ error: 'You cannot remove your own admin access' });

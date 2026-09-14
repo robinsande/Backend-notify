@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { registerUser, authenticateUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, recordAdminLoginEmail, getAdminReminderRecipientEmails, grantAdminAccess, createViewerUser, getAllUsers, deleteUserById } = require('../src/authStore');
+const { registerUser, authenticateUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, recordAdminLoginEmail, getAdminReminderRecipientEmails, grantAdminAccess, createViewerUser, getAllUsers, deleteUserById, updateUserRole } = require('../src/authStore');
 const { initialAttendees, syncEventAttendees } = require('../src/inMemoryStore');
 
 test('registerUser creates an account that can be used to sign in', async () => {
@@ -93,6 +93,16 @@ test('admin can delete another user from the system', async () => {
   assert.equal(deleted.email, 'delete.viewer@example.com');
   const remaining = await getAllUsers();
   assert.equal(remaining.some(user => user.id === created.id), false);
+});
+
+test('admin can change a user role between viewer and admin', async () => {
+  const created = await createViewerUser({ email: 'role.viewer@example.com', fullName: 'Role Viewer' });
+
+  const promoted = await updateUserRole(created.id, 'admin');
+  assert.equal(promoted.role, 'admin');
+
+  const demoted = await updateUserRole(created.id, 'viewer');
+  assert.equal(demoted.role, 'viewer');
 });
 
 test('reminder recipients prioritize admin login emails used for access', () => {
