@@ -18,6 +18,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const mongoWasConfigured = Boolean(process.env.MONGODB_URI || process.env.MONGO_URI);
+
+function requirePersistentAuth(res) {
+  if (mongoWasConfigured && mongoose.connection.readyState !== 1) {
+    res.status(503).json({ error: 'Account service is temporarily unavailable. Please try again shortly.' });
+    return false;
+  }
+  return true;
+}
+
 let events = [...initialEvents];
 let tasks = [...initialTasks];
 let notifications = [...initialNotifications];
@@ -249,6 +259,10 @@ app.delete('/api/documents/:id', (req, res) => {
 app.get('/api/audit-logs', (_req, res) => res.json(auditLogs));
 
 app.post('/api/auth/register', async (req, res) => {
+  if (!requirePersistentAuth(res)) {
+    return;
+  }
+
   try {
     const user = await registerUser(req.body || {});
     registerAdminLogin(user.email, user.role || 'admin');
@@ -262,6 +276,10 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
+  if (!requirePersistentAuth(res)) {
+    return;
+  }
+
   const user = await authenticateUser(req.body || {});
   if (!user) {
     return res.status(401).json({ error: 'Invalid email or password' });
