@@ -355,6 +355,7 @@ app.post('/api/admin/users', async (req, res) => {
     res.status(201).json({
       ok: true,
       emailSent: emailResult.fallback !== 'local-only',
+      emailError: emailResult.error || null,
       user: {
         id: user.id,
         email: user.email,
