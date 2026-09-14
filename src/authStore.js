@@ -379,6 +379,20 @@ async function getAllUsers() {
   }));
 }
 
+async function getUserById(userId) {
+  const normalizedId = String(userId || '').trim();
+  if (!normalizedId) {
+    return null;
+  }
+
+  if (useMongo()) {
+    const user = await User.findById(normalizedId);
+    return mapUser(user);
+  }
+
+  return mapUser(users.find(user => String(user.id) === normalizedId));
+}
+
 async function deleteUserById(userId) {
   const normalizedId = String(userId || '').trim();
   if (!normalizedId) {
@@ -443,6 +457,7 @@ module.exports = {
   getAdminReminderRecipientEmails,
   completeFirstLogin,
   getAllUsers,
+  getUserById,
   deleteUserById,
   updateUserRole
 };

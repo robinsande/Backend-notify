@@ -4,7 +4,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const { calculateReminderSchedule, getUpcomingItemsForReminders } = require('./reminderEngine');
 const { sendMail } = require('./emailService');
-const { registerUser, authenticateUser, createViewerUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, getRegisteredUserEmails, recordAdminLoginEmail, getAdminReminderRecipientEmails, completeFirstLogin, getAllUsers, deleteUserById, updateUserRole } = require('./authStore');
+const { registerUser, authenticateUser, createViewerUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, getRegisteredUserEmails, recordAdminLoginEmail, getAdminReminderRecipientEmails, completeFirstLogin, getAllUsers, getUserById, deleteUserById, updateUserRole } = require('./authStore');
 const { initialEvents, initialTasks, initialNotifications, initialAttendees, initialDocuments, initialAuditLogs, buildDashboardSummary, syncEventAttendees } = require('./inMemoryStore');
 
 const REMINDER_INTERVAL_MINUTES = Number(process.env.NOTIFY_REMINDER_INTERVAL_MINUTES || 5);
@@ -26,6 +26,22 @@ function requirePersistentAuth(res) {
     return false;
   }
   return true;
+}
+
+async function isAdminRequest(req) {
+  if (currentUserRole === 'admin') {
+    return true;
+  }
+
+  const user = await getUserById(req.get('x-notify-user-id'));
+  if (user && user.role === 'admin') {
+    currentUserId = user.id;
+    currentUserRole = user.role;
+    currentAdminEmail = user.email;
+    return true;
+  }
+
+  return false;
 }
 
 let events = [...initialEvents];
@@ -334,7 +350,7 @@ app.post('/api/auth/password-reset', async (req, res) => {
 
 // User management endpoints (admin only)
 app.post('/api/admin/users', async (req, res) => {
-  if (currentUserRole !== 'admin') {
+  if (!(await isAdminRequest(req))) {
     return res.status(403).json({ error: 'Only admins can create users' });
   }
 
@@ -371,7 +387,7 @@ app.post('/api/admin/users', async (req, res) => {
 });
 
 app.get('/api/admin/users', async (req, res) => {
-  if (currentUserRole !== 'admin') {
+  if (!(await isAdminRequest(req))) {
     return res.status(403).json({ error: 'Only admins can view users' });
   }
 
@@ -380,7 +396,7 @@ app.get('/api/admin/users', async (req, res) => {
 });
 
 app.delete('/api/admin/users/:id', async (req, res) => {
-  if (currentUserRole !== 'admin') {
+  if (!(await isAdminRequest(req))) {
     return res.status(403).json({ error: 'Only admins can delete users' });
   }
 
@@ -393,7 +409,7 @@ app.delete('/api/admin/users/:id', async (req, res) => {
 });
 
 app.put('/api/admin/users/:id/role', async (req, res) => {
-  if (currentUserRole !== 'admin') {
+  if (!(await isAdminRequest(req))) {
     return res.status(403).json({ error: 'Only admins can change user roles' });
   }
   if (!requirePersistentAuth(res)) {
