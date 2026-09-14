@@ -404,6 +404,32 @@ async function deleteUserById(userId) {
   return mapUser(deleted);
 }
 
+async function updateUserRole(userId, role) {
+  const normalizedId = String(userId || '').trim();
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  if (!normalizedId) {
+    throw new Error('User ID is required');
+  }
+  if (!['admin', 'viewer'].includes(normalizedRole)) {
+    throw new Error('Role must be admin or viewer');
+  }
+
+  if (useMongo()) {
+    const user = await User.findByIdAndUpdate(normalizedId, { role: normalizedRole }, { new: true, runValidators: true });
+    if (!user) {
+      throw new Error('User not found');
+    }
+    return mapUser(user);
+  }
+
+  const user = users.find(item => String(item.id) === normalizedId);
+  if (!user) {
+    throw new Error('User not found');
+  }
+  user.role = normalizedRole;
+  return mapUser(user);
+}
+
 module.exports = {
   registerUser,
   authenticateUser,
@@ -417,5 +443,6 @@ module.exports = {
   getAdminReminderRecipientEmails,
   completeFirstLogin,
   getAllUsers,
-  deleteUserById
+  deleteUserById,
+  updateUserRole
 };

@@ -4,7 +4,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const { calculateReminderSchedule, getUpcomingItemsForReminders } = require('./reminderEngine');
 const { sendMail } = require('./emailService');
-const { registerUser, authenticateUser, createViewerUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, getRegisteredUserEmails, recordAdminLoginEmail, getAdminReminderRecipientEmails, completeFirstLogin, getAllUsers, deleteUserById } = require('./authStore');
+const { registerUser, authenticateUser, createViewerUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, getRegisteredUserEmails, recordAdminLoginEmail, getAdminReminderRecipientEmails, completeFirstLogin, getAllUsers, deleteUserById, updateUserRole } = require('./authStore');
 const { initialEvents, initialTasks, initialNotifications, initialAttendees, initialDocuments, initialAuditLogs, buildDashboardSummary, syncEventAttendees } = require('./inMemoryStore');
 
 const REMINDER_INTERVAL_MINUTES = Number(process.env.NOTIFY_REMINDER_INTERVAL_MINUTES || 5);
@@ -361,6 +361,23 @@ app.delete('/api/admin/users/:id', async (req, res) => {
   try {
     const deleted = await deleteUserById(req.params.id);
     res.json({ ok: true, deleted });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/users/:id/role', async (req, res) => {
+  if (currentUserRole !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can change user roles' });
+  }
+  if (String(req.params.id) === String(currentUserId) && req.body?.role !== 'admin') {
+    return res.status(400).json({ error: 'You cannot remove your own admin access' });
+  }
+
+  try {
+    const user = await updateUserRole(req.params.id, req.body?.role);
+    console.log(`[ADMIN] User role changed: ${user.email} -> ${user.role}`);
+    res.json({ ok: true, user });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
