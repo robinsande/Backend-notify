@@ -87,7 +87,7 @@ async function processAutomaticReminders() {
 
   for (const item of upcomingReminders) {
     const message = buildReminderMessage(item);
-    if (notifications.some(note => note.message === message)) {
+    if (notifications.some(note => note.message === message && note.status === 'sent')) {
       continue;
     }
 
@@ -95,29 +95,32 @@ async function processAutomaticReminders() {
       id: `notif-${Date.now()}-${item.id}`,
       message,
       channel: 'email',
-      status: 'sent',
+      status: 'scheduled',
       createdAt: new Date().toISOString()
     };
 
     notifications.unshift(systemNotification);
 
     try {
-      await sendMail({
+      const emailResult = await sendMail({
         to: defaultRecipient,
         subject: `NOTIFY reminder for ${item.title}`,
         text: `${message} due ${item.dueDate}`,
         html: `<p>${message}</p><p>Scheduled due date: <strong>${item.dueDate}</strong></p>`
       });
+      if (emailResult.fallback === 'local-only') {
+        systemNotification.status = 'failed';
+        systemNotification.error = emailResult.error || 'Brevo is not configured';
+        console.warn(`[REMINDERS] Email was not sent for "${item.title}": ${systemNotification.error}`);
+        continue;
+      }
+
+      systemNotification.status = 'sent';
       console.log(`[REMINDERS] Sent reminder for "${item.title}" to: ${defaultRecipient}`);
     } catch (error) {
       console.error('Automatic reminder send failed', error.message);
-      notifications.unshift({
-        id: `notif-fail-${Date.now()}-${item.id}`,
-        message: `Failed to send reminder for ${item.title}`,
-        channel: 'email',
-        status: 'failed',
-        createdAt: new Date().toISOString()
-      });
+      systemNotification.status = 'failed';
+      systemNotification.error = error.message;
     }
   }
 }
@@ -129,6 +132,9 @@ setInterval(() => {
 }, REMINDER_INTERVAL_MS);
 
 console.log(`Automatic reminder checks enabled every ${REMINDER_INTERVAL_MINUTES} minutes.`);
+if (!process.env.NOTIFY_ADMIN_EMAILS && !process.env.ADMIN_EMAILS && !process.env.NOTIFY_ADMIN_EMAIL && !process.env.ADMIN_EMAIL) {
+  console.warn('[REMINDERS] No recipient configured. Set NOTIFY_ADMIN_EMAILS in the backend environment.');
+}
 
 processAutomaticReminders().catch(error => {
   console.error('Initial reminder job failed', error.message);
