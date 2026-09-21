@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const User = require('./models/userModel');
 
 const adminLoginEmails = new Set();
@@ -6,25 +7,31 @@ const adminOverrideEmails = new Set(['rmax6584@gmail.com']);
 const users = [];
 
 const passwordResetOtps = new Map();
+const sessions = new Map();
 
 function useMongo() {
   return mongoose.connection && mongoose.connection.readyState === 1;
 }
 
-function mapUser(user) {
+function mapUser(user, { includePassword = false } = {}) {
   if (!user) {
     return null;
   }
 
-  return {
+  const mappedUser = {
     id: String(user._id || user.id),
     email: user.email,
-    password: user.password,
     fullName: user.fullName,
     role: user.role,
     isFirstLogin: user.isFirstLogin,
     createdAt: user.createdAt
   };
+
+  if (includePassword) {
+    mappedUser.password = user.password;
+  }
+
+  return mappedUser;
 }
 
 function generateOtpCode() {
@@ -129,7 +136,7 @@ async function createViewerUser({ email, fullName, tempPassword }) {
       createdAt: new Date().toISOString()
     });
 
-    return mapUser(user);
+    return mapUser(user, { includePassword: true });
   }
 
   const existing = users.find(user => user.email === normalizedEmail);
@@ -148,7 +155,7 @@ async function createViewerUser({ email, fullName, tempPassword }) {
   };
 
   users.push(user);
-  return mapUser(user);
+  return mapUser(user, { includePassword: true });
 }
 
 async function grantAdminAccess(email) {
@@ -225,6 +232,33 @@ async function authenticateUser({ email, password }) {
   }
 
   return mapUser(user);
+}
+
+async function createSession(user) {
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, {
+    userId: user.id,
+    createdAt: Date.now()
+  });
+  return token;
+}
+
+async function getSessionUser(token) {
+  const session = sessions.get(String(token || '').trim());
+  if (!session) {
+    return null;
+  }
+
+  const user = await getUserById(session.userId);
+  if (!user) {
+    sessions.delete(token);
+    return null;
+  }
+  return user;
+}
+
+function deleteSession(token) {
+  sessions.delete(String(token || '').trim());
 }
 
 async function resetPassword({ email, newPassword }) {
@@ -447,6 +481,9 @@ async function updateUserRole(userId, role) {
 module.exports = {
   registerUser,
   authenticateUser,
+  createSession,
+  getSessionUser,
+  deleteSession,
   createViewerUser,
   grantAdminAccess,
   resetPassword,

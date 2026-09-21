@@ -4,7 +4,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const { calculateReminderSchedule, getUpcomingItemsForReminders } = require('./reminderEngine');
 const { sendMail } = require('./emailService');
-const { registerUser, authenticateUser, createViewerUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, getRegisteredUserEmails, recordAdminLoginEmail, getAdminReminderRecipientEmails, completeFirstLogin, getAllUsers, getUserById, deleteUserById, updateUserRole } = require('./authStore');
+const { registerUser, authenticateUser, createSession, getSessionUser, deleteSession, createViewerUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, getRegisteredUserEmails, recordAdminLoginEmail, getAdminReminderRecipientEmails, completeFirstLogin, getAllUsers, getUserById, deleteUserById, updateUserRole } = require('./authStore');
 const { initialEvents, initialTasks, initialNotifications, initialAttendees, initialDocuments, initialAuditLogs, buildDashboardSummary, syncEventAttendees } = require('./inMemoryStore');
 
 const REMINDER_INTERVAL_MINUTES = Number(process.env.NOTIFY_REMINDER_INTERVAL_MINUTES || 5);
@@ -18,6 +18,42 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.use((req, res, next) => {
+  const startedAt = process.hrtime.bigint();
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    console.info('[NOTIFY_TIMING]', JSON.stringify({
+      name: 'request',
+      method: req.method,
+      route: req.route?.path || req.path,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs)
+    }));
+  });
+  next();
+});
+
+app.use(async (req, res, next) => {
+  const isPublic = req.path === '/health'
+    || req.path === '/api/auth/register'
+    || req.path === '/api/auth/login'
+    || req.path === '/api/auth/password-reset'
+    || req.path === '/api/auth/complete-first-login';
+  if (isPublic) {
+    return next();
+  }
+
+  const authorization = String(req.get('authorization') || '');
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  const user = await getSessionUser(token);
+  if (!user) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  req.auth = { token, user };
+  next();
+});
+
 const mongoWasConfigured = Boolean(process.env.MONGODB_URI || process.env.MONGO_URI);
 
 function requirePersistentAuth(res) {
@@ -29,15 +65,8 @@ function requirePersistentAuth(res) {
 }
 
 async function isAdminRequest(req) {
-  if (currentUserRole === 'admin') {
-    return true;
-  }
-
-  const user = await getUserById(req.get('x-notify-user-id'));
-  if (user && user.role === 'admin') {
-    currentUserId = user.id;
-    currentUserRole = user.role;
-    currentAdminEmail = user.email;
+  const user = req.auth?.user;
+  if (user?.role === 'admin') {
     return true;
   }
 
@@ -298,21 +327,33 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
+  const loginStartedAt = process.hrtime.bigint();
   if (!requirePersistentAuth(res)) {
     return;
   }
 
+  const verificationStartedAt = process.hrtime.bigint();
   const user = await authenticateUser(req.body || {});
+  console.info('[NOTIFY_TIMING]', JSON.stringify({
+    name: 'credential-verification',
+    durationMs: Math.round(Number(process.hrtime.bigint() - verificationStartedAt) / 1e6)
+  }));
   if (!user) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
+  const sessionToken = await createSession(user);
   registerAdminLogin(user.email, user.role || 'admin');
   currentUserId = user.id;
   recordAdminLoginEmail(user.email);
+  console.info('[NOTIFY_TIMING]', JSON.stringify({
+    name: 'session-state-created',
+    durationMs: Math.round(Number(process.hrtime.bigint() - loginStartedAt) / 1e6)
+  }));
   console.log(`[AUTH] ${user.role || 'admin'} logged in: ${user.email} (will receive reminders)`);
-  res.json({ 
+  res.json({
     ok: true, 
+    sessionToken,
     user: { 
       id: user.id, 
       email: user.email, 
@@ -321,6 +362,15 @@ app.post('/api/auth/login', async (req, res) => {
       isFirstLogin: user.isFirstLogin || false
     } 
   });
+});
+
+app.get('/api/auth/session', (req, res) => {
+  res.json({ ok: true, user: req.auth.user });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  deleteSession(req.auth.token);
+  res.json({ ok: true });
 });
 
 app.post('/api/auth/password-reset', async (req, res) => {

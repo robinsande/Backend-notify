@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { registerUser, authenticateUser, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, recordAdminLoginEmail, getAdminReminderRecipientEmails, grantAdminAccess, createViewerUser, getAllUsers, deleteUserById, updateUserRole } = require('../src/authStore');
+const { registerUser, authenticateUser, createSession, getSessionUser, deleteSession, resetPassword, requestPasswordResetOtp, verifyPasswordResetOtp, recordAdminLoginEmail, getAdminReminderRecipientEmails, grantAdminAccess, createViewerUser, getAllUsers, deleteUserById, updateUserRole } = require('../src/authStore');
 const { initialAttendees, syncEventAttendees } = require('../src/inMemoryStore');
 
 test('registerUser creates an account that can be used to sign in', async () => {
@@ -12,6 +12,21 @@ test('registerUser creates an account that can be used to sign in', async () => 
   const authenticated = await authenticateUser({ email: 'new.user@example.com', password: 'Secret123!' });
   assert.ok(authenticated);
   assert.equal(authenticated.email, 'new.user@example.com');
+});
+
+test('sessions are isolated per user and can be revoked', async () => {
+  const firstUser = await registerUser({ email: 'session.first@example.com', password: 'Secret123!', fullName: 'First User' });
+  const secondUser = await registerUser({ email: 'session.second@example.com', password: 'Secret123!', fullName: 'Second User' });
+  const firstToken = await createSession(firstUser);
+  const secondToken = await createSession(secondUser);
+
+  assert.notEqual(firstToken, secondToken);
+  assert.equal((await getSessionUser(firstToken)).email, firstUser.email);
+  assert.equal((await getSessionUser(secondToken)).email, secondUser.email);
+
+  deleteSession(firstToken);
+  assert.equal(await getSessionUser(firstToken), null);
+  assert.equal((await getSessionUser(secondToken)).email, secondUser.email);
 });
 
 test('grantAdminAccess upgrades an existing account to admin role', async () => {
